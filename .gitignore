@@ -1,0 +1,28 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Docker persistent volumes
+docker/volumes/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node (if any scripts use it)
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Temp
+tmp/
+.tmp/

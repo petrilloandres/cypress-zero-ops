@@ -1,0 +1,464 @@
+# =============================================================================
+# Cypress Zero-Ops — Docker Compose
+# =============================================================================
+# Usage:
+#   Phase 1 (Auth + Notifications):  docker compose --profile phase1 up -d
+#   Phase 1+2 (+ Contracts/Billing): docker compose --profile phase1 --profile phase2 up -d
+#   Phase 1+2+3 (+ CRM):             docker compose --profile phase1 --profile phase2 --profile phase3 up -d
+#   All phases:                       docker compose --profile phase1 --profile phase2 --profile phase3 --profile phase4 up -d
+#
+# All host ports are in the 7000 range to avoid collisions.
+# =============================================================================
+
+name: cypress-zero-ops
+
+networks:
+  cypress-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  logto-data:
+    driver: local
+  n8n-data:
+    driver: local
+  novu-data:
+    driver: local
+  docuseal-data:
+    driver: local
+  lago-db-data:
+    driver: local
+  lago-redis-data:
+    driver: local
+  twenty-data:
+    driver: local
+
+# =============================================================================
+# PHASE 1 — Foundation: PostgreSQL, Redis, Logto, n8n, Novu
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 — Shared database (separate logical DBs per service)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["phase1"]
+    container_name: cypress-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cypress}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cypress_dev_password}
+    ports:
+      - "7432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - cypress-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cypress}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 — Shared cache/queue
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    profiles: ["phase1"]
+    container_name: cypress-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "7379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - cypress-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Logto — Authentication & RBAC
+  # Host ports: 7001 (API), 7002 (Admin Console)
+  # ---------------------------------------------------------------------------
+  logto:
+    image: svhd/logto:latest
+    profiles: ["phase1"]
+    container_name: cypress-logto
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TRUST_PROXY_HEADER: "1"
+      DB_URL: postgres://${POSTGRES_USER:-cypress}:${POSTGRES_PASSWORD:-cypress_dev_password}@postgres:5432/logto
+      ENDPOINT: http://localhost:7001
+      ADMIN_ENDPOINT: http://localhost:7002
+    ports:
+      - "7001:3001"
+      - "7002:3002"
+    volumes:
+      - logto-data:/etc/logto
+    networks:
+      - cypress-net
+    entrypoint:
+      [
+        "sh",
+        "-c",
+        "npm run cli db seed -- --swe && npm start",
+      ]
+
+  # ---------------------------------------------------------------------------
+  # n8n — Workflow Orchestration
+  # Host port: 7678
+  # ---------------------------------------------------------------------------
+  n8n:
+    image: n8nio/n8n:latest
+    profiles: ["phase1"]
+    container_name: cypress-n8n
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-cypress}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-cypress_dev_password}
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:7678
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-cypress_n8n_dev}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-change-me-to-a-random-string}
+      EXECUTIONS_MODE: regular
+      GENERIC_TIMEZONE: America/New_York
+    ports:
+      - "7678:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks:
+      - cypress-net
+
+  # ---------------------------------------------------------------------------
+  # Novu — Notification Orchestration
+  # Uses Novu's all-in-one Docker image (API + Worker + WS)
+  # Host ports: 7010 (API), 7011 (Dashboard), 7012 (WebSocket)
+  # ---------------------------------------------------------------------------
+  novu-api:
+    image: ghcr.io/novuhq/novu/api:latest
+    profiles: ["phase1"]
+    container_name: cypress-novu-api
+    restart: unless-stopped
+    depends_on:
+      novu-mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: local
+      API_ROOT_URL: http://localhost:7010
+      FRONT_BASE_URL: http://localhost:7011
+      MONGO_URL: mongodb://novu-mongodb:27017/novu
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB_INDEX: 2
+      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
+      STORE_ENCRYPTION_KEY: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
+      S3_LOCAL_STACK: ""
+      S3_BUCKET_NAME: ""
+      S3_REGION: ""
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+    ports:
+      - "7010:3000"
+    networks:
+      - cypress-net
+
+  novu-worker:
+    image: ghcr.io/novuhq/novu/worker:latest
+    profiles: ["phase1"]
+    container_name: cypress-novu-worker
+    restart: unless-stopped
+    depends_on:
+      novu-mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: local
+      MONGO_URL: mongodb://novu-mongodb:27017/novu
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB_INDEX: 2
+      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
+      STORE_ENCRYPTION_KEY: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
+    networks:
+      - cypress-net
+
+  novu-ws:
+    image: ghcr.io/novuhq/novu/ws:latest
+    profiles: ["phase1"]
+    container_name: cypress-novu-ws
+    restart: unless-stopped
+    depends_on:
+      novu-mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: local
+      MONGO_URL: mongodb://novu-mongodb:27017/novu
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB_INDEX: 2
+      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
+    ports:
+      - "7012:3002"
+    networks:
+      - cypress-net
+
+  novu-web:
+    image: ghcr.io/novuhq/novu/web:latest
+    profiles: ["phase1"]
+    container_name: cypress-novu-web
+    restart: unless-stopped
+    depends_on:
+      - novu-api
+    environment:
+      REACT_APP_API_URL: http://localhost:7010
+      REACT_APP_WS_URL: http://localhost:7012
+      REACT_APP_ENVIRONMENT: local
+    ports:
+      - "7011:4200"
+    networks:
+      - cypress-net
+
+  # Novu requires MongoDB (not PostgreSQL)
+  novu-mongodb:
+    image: mongo:7
+    profiles: ["phase1"]
+    container_name: cypress-novu-mongodb
+    restart: unless-stopped
+    volumes:
+      - novu-data:/data/db
+    networks:
+      - cypress-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # PHASE 2 — Contracts & Billing: DocuSeal, Lago
+  # =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # DocuSeal — Contract Generation & E-Signing
+  # Host port: 7020
+  # ---------------------------------------------------------------------------
+  docuseal:
+    image: docuseal/docuseal:latest
+    profiles: ["phase2"]
+    container_name: cypress-docuseal
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-cypress}:${POSTGRES_PASSWORD:-cypress_dev_password}@postgres:5432/docuseal
+      SECRET_KEY_BASE: ${DOCUSEAL_SECRET_KEY:-change-me-to-a-random-string}
+    ports:
+      - "7020:3000"
+    volumes:
+      - docuseal-data:/data
+    networks:
+      - cypress-net
+
+  # ---------------------------------------------------------------------------
+  # Lago — Usage-Based Billing & Metering
+  # Lago requires its own PostgreSQL and Redis instances
+  # Host ports: 7030 (API), 7031 (Frontend)
+  # ---------------------------------------------------------------------------
+  lago-db:
+    image: postgres:16-alpine
+    profiles: ["phase2"]
+    container_name: cypress-lago-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LAGO_DB_USER:-lago}
+      POSTGRES_PASSWORD: ${LAGO_DB_PASSWORD:-lago_dev_password}
+      POSTGRES_DB: ${LAGO_DB_NAME:-lago}
+    ports:
+      - "7433:5432"
+    volumes:
+      - lago-db-data:/var/lib/postgresql/data
+    networks:
+      - cypress-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LAGO_DB_USER:-lago}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  lago-redis:
+    image: redis:7-alpine
+    profiles: ["phase2"]
+    container_name: cypress-lago-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "7380:6379"
+    volumes:
+      - lago-redis-data:/data
+    networks:
+      - cypress-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  lago-api:
+    image: getlago/api:v1.21.1
+    profiles: ["phase2"]
+    container_name: cypress-lago-api
+    restart: unless-stopped
+    depends_on:
+      lago-db:
+        condition: service_healthy
+      lago-redis:
+        condition: service_healthy
+    environment:
+      LAGO_API_URL: http://localhost:7030
+      LAGO_FRONT_URL: http://localhost:7031
+      DATABASE_URL: postgres://${LAGO_DB_USER:-lago}:${LAGO_DB_PASSWORD:-lago_dev_password}@lago-db:5432/${LAGO_DB_NAME:-lago}
+      REDIS_URL: redis://lago-redis:6379
+      SECRET_KEY_BASE: ${LAGO_SECRET_KEY_BASE:-change-me-to-a-random-string}
+      RAILS_ENV: development
+      RAILS_LOG_TO_STDOUT: "true"
+      LAGO_RSA_PRIVATE_KEY: ${LAGO_RSA_PRIVATE_KEY:-}
+      ENCRYPTION_PRIMARY_KEY: ${LAGO_ENCRYPTION_PRIMARY_KEY:-change-me-primary-key}
+      ENCRYPTION_DETERMINISTIC_KEY: ${LAGO_ENCRYPTION_DETERMINISTIC_KEY:-change-me-deterministic-key}
+      ENCRYPTION_KEY_DERIVATION_SALT: ${LAGO_ENCRYPTION_KEY_DERIVATION_SALT:-change-me-derivation-salt}
+      LAGO_WEBHOOK_ATTEMPTS: 3
+      LAGO_USE_AWS_S3: "false"
+    ports:
+      - "7030:3000"
+    networks:
+      - cypress-net
+
+  lago-worker:
+    image: getlago/api:v1.21.1
+    profiles: ["phase2"]
+    container_name: cypress-lago-worker
+    restart: unless-stopped
+    depends_on:
+      lago-db:
+        condition: service_healthy
+      lago-redis:
+        condition: service_healthy
+    environment:
+      LAGO_API_URL: http://localhost:7030
+      DATABASE_URL: postgres://${LAGO_DB_USER:-lago}:${LAGO_DB_PASSWORD:-lago_dev_password}@lago-db:5432/${LAGO_DB_NAME:-lago}
+      REDIS_URL: redis://lago-redis:6379
+      SECRET_KEY_BASE: ${LAGO_SECRET_KEY_BASE:-change-me-to-a-random-string}
+      RAILS_ENV: development
+      ENCRYPTION_PRIMARY_KEY: ${LAGO_ENCRYPTION_PRIMARY_KEY:-change-me-primary-key}
+      ENCRYPTION_DETERMINISTIC_KEY: ${LAGO_ENCRYPTION_DETERMINISTIC_KEY:-change-me-deterministic-key}
+      ENCRYPTION_KEY_DERIVATION_SALT: ${LAGO_ENCRYPTION_KEY_DERIVATION_SALT:-change-me-derivation-salt}
+    command: ["./scripts/start.worker.sh"]
+    networks:
+      - cypress-net
+
+  lago-clock:
+    image: getlago/api:v1.21.1
+    profiles: ["phase2"]
+    container_name: cypress-lago-clock
+    restart: unless-stopped
+    depends_on:
+      lago-db:
+        condition: service_healthy
+      lago-redis:
+        condition: service_healthy
+    environment:
+      LAGO_API_URL: http://localhost:7030
+      DATABASE_URL: postgres://${LAGO_DB_USER:-lago}:${LAGO_DB_PASSWORD:-lago_dev_password}@lago-db:5432/${LAGO_DB_NAME:-lago}
+      REDIS_URL: redis://lago-redis:6379
+      SECRET_KEY_BASE: ${LAGO_SECRET_KEY_BASE:-change-me-to-a-random-string}
+      RAILS_ENV: development
+      ENCRYPTION_PRIMARY_KEY: ${LAGO_ENCRYPTION_PRIMARY_KEY:-change-me-primary-key}
+      ENCRYPTION_DETERMINISTIC_KEY: ${LAGO_ENCRYPTION_DETERMINISTIC_KEY:-change-me-deterministic-key}
+      ENCRYPTION_KEY_DERIVATION_SALT: ${LAGO_ENCRYPTION_KEY_DERIVATION_SALT:-change-me-derivation-salt}
+    command: ["./scripts/start.clock.sh"]
+    networks:
+      - cypress-net
+
+  lago-front:
+    image: getlago/front:v1.21.1
+    profiles: ["phase2"]
+    container_name: cypress-lago-front
+    restart: unless-stopped
+    depends_on:
+      - lago-api
+    environment:
+      API_URL: http://localhost:7030
+      APP_ENV: development
+      LAGO_OAUTH_PROXY_URL: ""
+      LAGO_DISABLE_SIGNUP: "false"
+    ports:
+      - "7031:80"
+    networks:
+      - cypress-net
+
+  # =============================================================================
+  # PHASE 3 — CRM: Twenty
+  # =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # Twenty CRM — Customer Relationship Management
+  # Host port: 7040
+  # ---------------------------------------------------------------------------
+  twenty:
+    image: twentycrm/twenty:latest
+    profiles: ["phase3"]
+    container_name: cypress-twenty
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PG_DATABASE_URL: postgres://${POSTGRES_USER:-cypress}:${POSTGRES_PASSWORD:-cypress_dev_password}@postgres:5432/twenty
+      REDIS_URL: redis://redis:6379
+      SERVER_URL: http://localhost:7040
+      FRONT_AUTH_CALLBACK_URL: http://localhost:7040/verify
+      ACCESS_TOKEN_SECRET: ${TWENTY_ACCESS_TOKEN_SECRET:-change-me-access-token-secret}
+      LOGIN_TOKEN_SECRET: ${TWENTY_LOGIN_TOKEN_SECRET:-change-me-login-token-secret}
+      REFRESH_TOKEN_SECRET: ${TWENTY_REFRESH_TOKEN_SECRET:-change-me-refresh-token-secret}
+      FILE_TOKEN_SECRET: ${TWENTY_FILE_TOKEN_SECRET:-change-me-file-token-secret}
+      IS_SIGN_UP_DISABLED: "false"
+    ports:
+      - "7040:3000"
+    volumes:
+      - twenty-data:/app/.local-storage
+    networks:
+      - cypress-net

@@ -1,0 +1,42 @@
+# =============================================================================
+# Cypress Zero-Ops — Railway Configuration
+# =============================================================================
+# This file defines the Railway project structure.
+# Each service section maps to a Railway service.
+#
+# Deploy with: railway up
+# =============================================================================
+
+[build]
+builder = "nixpacks"
+
+# Note: Railway services are primarily configured via the Railway dashboard
+# and CLI, not this file. This file serves as documentation and baseline
+# configuration for the Railway project structure.
+#
+# Each service in docker/docker-compose.yml maps to a Railway service:
+#
+# Phase 1:
+#   - postgres    → Railway PostgreSQL plugin
+#   - redis       → Railway Redis plugin
+#   - logto       → Docker: svhd/logto
+#   - n8n         → Docker: n8nio/n8n
+#   - novu-api    → Docker: ghcr.io/novuhq/novu/api
+#   - novu-worker → Docker: ghcr.io/novuhq/novu/worker
+#   - novu-ws     → Docker: ghcr.io/novuhq/novu/ws
+#   - novu-web    → Docker: ghcr.io/novuhq/novu/web
+#   - novu-mongodb→ Docker: mongo:7
+#
+# Phase 2:
+#   - docuseal    → Docker: docuseal/docuseal
+#   - lago-db     → Railway PostgreSQL plugin (separate)
+#   - lago-redis  → Railway Redis plugin (separate)
+#   - lago-api    → Docker: getlago/api
+#   - lago-worker → Docker: getlago/api (worker command)
+#   - lago-clock  → Docker: getlago/api (clock command)
+#   - lago-front  → Docker: getlago/front
+#
+# Phase 3:
+#   - twenty      → Docker: twentycrm/twenty
+#
+# See docs/deployment/railway-guide.md for full deployment instructions.
