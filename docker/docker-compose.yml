@@ -245,18 +245,18 @@ services:
       - cypress-net
 
   novu-web:
-    image: ghcr.io/novuhq/novu/web:latest
+    image: ghcr.io/novuhq/novu/dashboard:latest
     profiles: ["phase1"]
     container_name: cypress-novu-web
     restart: unless-stopped
     depends_on:
       - novu-api
     environment:
-      REACT_APP_API_URL: http://localhost:7010
-      REACT_APP_WS_URL: http://localhost:7012
-      REACT_APP_ENVIRONMENT: local
+      VITE_API_HOSTNAME: http://localhost:7010
+      VITE_WEBSOCKET_HOSTNAME: http://localhost:7012
+      VITE_SELF_HOSTED: "true"
     ports:
-      - "7011:4200"
+      - "7011:4000"
     networks:
       - cypress-net
 
