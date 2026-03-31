@@ -27,6 +27,8 @@ volumes:
     driver: local
   novu-data:
     driver: local
+  novu-clickhouse-data:
+    driver: local
   docuseal-data:
     driver: local
   lago-db-data:
@@ -169,6 +171,8 @@ services:
     depends_on:
       novu-mongodb:
         condition: service_healthy
+      novu-clickhouse:
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
@@ -182,6 +186,10 @@ services:
       JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
       STORE_ENCRYPTION_KEY: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
       STORAGE_SERVICE: LOCAL
+      CLICK_HOUSE_URL: http://novu-clickhouse:8123
+      CLICK_HOUSE_USER: default
+      CLICK_HOUSE_PASSWORD: ""
+      CLICK_HOUSE_DATABASE: novu
     ports:
       - "7010:3000"
     networks:
@@ -195,6 +203,8 @@ services:
     depends_on:
       novu-mongodb:
         condition: service_healthy
+      novu-clickhouse:
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
@@ -205,6 +215,10 @@ services:
       REDIS_DB_INDEX: 2
       JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
       STORE_ENCRYPTION_KEY: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
+      CLICK_HOUSE_URL: http://novu-clickhouse:8123
+      CLICK_HOUSE_USER: default
+      CLICK_HOUSE_PASSWORD: ""
+      CLICK_HOUSE_DATABASE: novu
     networks:
       - cypress-net
 
@@ -258,6 +272,22 @@ services:
       - cypress-net
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Novu 3.x requires ClickHouse for analytics
+  novu-clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    profiles: ["phase1"]
+    container_name: cypress-novu-clickhouse
+    restart: unless-stopped
+    volumes:
+      - novu-clickhouse-data:/var/lib/clickhouse
+    networks:
+      - cypress-net
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 5
