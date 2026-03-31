@@ -179,13 +179,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB_INDEX: 2
-      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
-      STORE_ENCRYPTION_KEY: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
-      S3_LOCAL_STACK: ""
-      S3_BUCKET_NAME: ""
-      S3_REGION: ""
-      AWS_ACCESS_KEY_ID: ""
-      AWS_SECRET_ACCESS_KEY: ""
+      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
+      STORE_ENCRYPTION_KEY: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
+      STORAGE_SERVICE: LOCAL
     ports:
       - "7010:3000"
     networks:
@@ -207,8 +203,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB_INDEX: 2
-      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
-      STORE_ENCRYPTION_KEY: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
+      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
+      STORE_ENCRYPTION_KEY: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
     networks:
       - cypress-net
 
@@ -228,7 +224,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB_INDEX: 2
-      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-to-a-random-string}
+      JWT_SECRET: ${NOVU_SECRET_KEY:-change-me-novu-secret-key-32chs!}
     ports:
       - "7012:3002"
     networks:
