@@ -194,6 +194,15 @@ PERM_NAMES=(
   "fleet:read"
   "fleet:write"
   "fleet:appraise"
+  "vehicle:transition"
+  "vehicle:approve"
+  "offer:submit"
+  "offer:review"
+  "dd:manage"
+  "campaign:read"
+  "campaign:manage"
+  "org:manage"
+  "org:onboard"
   "billing:view"
   "billing:manage"
   "contracts:sign"
@@ -203,6 +212,15 @@ PERM_DESCS=(
   "View fleet data (vehicles, listings, status)"
   "Create and update fleet entries, submit vehicles"
   "Run AI-powered vehicle appraisals (ARVIS/ORVIS)"
+  "Execute vehicle status transitions (DRAFT→REVIEW→LISTED→SOLD etc.)"
+  "Approve or reject vehicles at PENDING_APPROVAL stage (FM privilege)"
+  "Submit offers on listed vehicles"
+  "Review, approve, reject, or counter offers"
+  "Create and manage due diligence workflows and tasks"
+  "View campaign data and listings"
+  "Manage campaign lifecycle (create, pause, cancel, add/remove vehicles)"
+  "Manage org lifecycle (activate, suspend, deactivate, upgrade)"
+  "Self-register org, accept terms, complete onboarding"
   "View invoices, metering, subscription status"
   "Manage subscription, update payment methods"
   "Sign legal documents in DocuSeal"
@@ -272,13 +290,25 @@ create_role() {
 }
 
 GUEST_ROLE_ID=$(create_role "guest" "Sandbox user — limited to 3-vehicle appraisal trial" "User" \
-  "fleet:read")
+  "fleet:read" "campaign:read")
 
 PRO_ROLE_ID=$(create_role "pro" "Full access — fleet management, appraisals, billing, contracts" "User" \
-  "fleet:read" "fleet:write" "fleet:appraise" "billing:view" "contracts:sign")
+  "fleet:read" "fleet:write" "fleet:appraise" "campaign:read" "billing:view" "contracts:sign" "org:onboard")
+
+FLEET_MANAGER_ROLE_ID=$(create_role "fleet_manager" \
+  "Fleet Manager (FM) — approves floor prices, reviews offers, manages fleet operations" "User" \
+  "fleet:read" "fleet:write" "fleet:appraise" "vehicle:transition" "vehicle:approve" \
+  "offer:review" "campaign:read" "campaign:manage" "billing:view" "contracts:sign" "org:onboard")
+
+CYPRESS_MANAGER_ROLE_ID=$(create_role "cypress_manager" \
+  "Cypress Manager (CM) — internal staff: manages listings, offers, due diligence, org lifecycle" "User" \
+  "fleet:read" "fleet:write" "fleet:appraise" "vehicle:transition" "offer:review" \
+  "dd:manage" "campaign:read" "campaign:manage" "org:manage" "billing:view" "admin:all")
 
 ADMIN_ROLE_ID=$(create_role "admin" "Internal staff — full platform administration" "User" \
-  "fleet:read" "fleet:write" "fleet:appraise" "billing:view" "billing:manage" "contracts:sign" "admin:all")
+  "fleet:read" "fleet:write" "fleet:appraise" "vehicle:transition" "vehicle:approve" \
+  "offer:submit" "offer:review" "dd:manage" "campaign:read" "campaign:manage" \
+  "org:manage" "org:onboard" "billing:view" "billing:manage" "contracts:sign" "admin:all")
 
 # Set guest as the default role for new signups
 info "Setting guest as default role..."
@@ -361,13 +391,20 @@ create_org_role() {
 }
 
 ORG_MEMBER_ID=$(create_org_role "org:member" "Standard organization member" \
-  "fleet:read" "fleet:write" "fleet:appraise" "billing:view" "contracts:sign")
+  "fleet:read" "fleet:write" "fleet:appraise" "campaign:read" "billing:view" "contracts:sign" "org:onboard")
 
 ORG_ADMIN_ID=$(create_org_role "org:admin" "Organization admin — can manage billing and members" \
-  "fleet:read" "fleet:write" "fleet:appraise" "billing:view" "billing:manage" "contracts:sign")
+  "fleet:read" "fleet:write" "fleet:appraise" "campaign:read" "campaign:manage" \
+  "billing:view" "billing:manage" "contracts:sign" "org:onboard")
 
-ORG_OWNER_ID=$(create_org_role "org:owner" "Organization owner — original contract signer" \
-  "fleet:read" "fleet:write" "fleet:appraise" "billing:view" "billing:manage" "contracts:sign")
+ORG_FLEET_MANAGER_ID=$(create_org_role "org:fleet_manager" \
+  "Fleet Manager (FM) within org — approves pricing, reviews offers, manages campaigns" \
+  "fleet:read" "fleet:write" "fleet:appraise" "vehicle:transition" "vehicle:approve" \
+  "offer:review" "campaign:read" "campaign:manage" "billing:view" "contracts:sign" "org:onboard")
+
+ORG_OWNER_ID=$(create_org_role "org:owner" "Organization owner — original contract signer, full org control" \
+  "fleet:read" "fleet:write" "fleet:appraise" "vehicle:transition" "vehicle:approve" \
+  "offer:review" "campaign:read" "campaign:manage" "billing:view" "billing:manage" "contracts:sign" "org:onboard")
 
 # ---------------------------------------------------------------------------
 # 8. Create M2M Applications
@@ -419,7 +456,45 @@ N8N_M2M_ID="${N8N_M2M_RESULT%%|*}"
 N8N_M2M_SECRET="${N8N_M2M_RESULT##*|}"
 
 # ---------------------------------------------------------------------------
-# 9. Create Test Organization
+# 9. Create cypress-mvp Traditional Web App
+# ---------------------------------------------------------------------------
+info "Setting up cypress-mvp application..."
+
+CYPRESS_APP_NAME="cypress-mvp"
+CYPRESS_APP_REDIRECT="${CYPRESS_APP_REDIRECT_URI:-http://localhost:3000/api/auth/callback/logto}"
+CYPRESS_APP_LOGOUT_REDIRECT="${CYPRESS_APP_LOGOUT_REDIRECT_URI:-http://localhost:3000}"
+
+EXISTING_APP=$(api GET /api/applications | jq -r ".[] | select(.name==\"$CYPRESS_APP_NAME\") | .id")
+
+if [[ -n "$EXISTING_APP" ]]; then
+  CYPRESS_APP_ID="$EXISTING_APP"
+  CYPRESS_APP_SECRET=$(api GET "/api/applications/$EXISTING_APP" | jq -r '.secret')
+  ok "App '$CYPRESS_APP_NAME' exists ($CYPRESS_APP_ID)"
+else
+  APP_RESULT=$(api POST /api/applications -d "$(cat <<EOJSON
+{
+  "name": "$CYPRESS_APP_NAME",
+  "type": "Traditional",
+  "description": "Cypress MVP — Next.js fleet management platform",
+  "oidcClientMetadata": {
+    "redirectUris": ["$CYPRESS_APP_REDIRECT"],
+    "postLogoutRedirectUris": ["$CYPRESS_APP_LOGOUT_REDIRECT"]
+  }
+}
+EOJSON
+  )")
+  CYPRESS_APP_ID=$(echo "$APP_RESULT" | jq -r '.id')
+  CYPRESS_APP_SECRET=$(echo "$APP_RESULT" | jq -r '.secret')
+
+  if [[ -n "$CYPRESS_APP_ID" && "$CYPRESS_APP_ID" != "null" ]]; then
+    ok "App '$CYPRESS_APP_NAME' → $CYPRESS_APP_ID"
+  else
+    warn "Failed to create cypress-mvp app: $(echo "$APP_RESULT" | jq -r '.message // .code // "unknown error"')"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 10. Create Test Organization
 # ---------------------------------------------------------------------------
 info "Setting up test organization..."
 
@@ -437,7 +512,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 10. Create Webhooks to n8n
+# 11. Create Webhooks to n8n
 # ---------------------------------------------------------------------------
 info "Setting up webhooks to n8n..."
 
@@ -468,7 +543,7 @@ create_webhook "User Updated → n8n"            "User.Updated"              "/w
 create_webhook "Organization Created → n8n"    "PostRegister"              "/webhook/org-created"
 
 # ---------------------------------------------------------------------------
-# 11. Google Social Connector (optional — requires LOGTO_GOOGLE_CLIENT_ID)
+# 12. Google Social Connector (optional — requires LOGTO_GOOGLE_CLIENT_ID)
 # ---------------------------------------------------------------------------
 GOOGLE_CLIENT_ID="${LOGTO_GOOGLE_CLIENT_ID:-}"
 GOOGLE_CLIENT_SECRET="${LOGTO_GOOGLE_CLIENT_SECRET:-}"
@@ -513,7 +588,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 12. Resend Email Connector (optional — requires LOGTO_RESEND_API_KEY)
+# 13. Resend Email Connector (optional — requires LOGTO_RESEND_API_KEY)
 # ---------------------------------------------------------------------------
 RESEND_KEY="${LOGTO_RESEND_API_KEY:-}"
 EMAIL_FROM="${LOGTO_EMAIL_FROM:-onboarding@resend.dev}"
@@ -601,16 +676,23 @@ echo "  API Resource:  $API_RESOURCE_INDICATOR ($RESOURCE_ID)"
 echo "  Permissions:   ${#PERM_NAMES[@]} scopes created"
 echo ""
 echo "  Roles:"
-echo "    guest   → $GUEST_ROLE_ID  (default for new signups)"
-echo "    pro     → $PRO_ROLE_ID"
-echo "    admin   → $ADMIN_ROLE_ID"
+echo "    guest           → $GUEST_ROLE_ID  (default for new signups)"
+echo "    pro             → $PRO_ROLE_ID"
+echo "    fleet_manager   → $FLEET_MANAGER_ROLE_ID  (FM - approves prices, reviews offers)"
+echo "    cypress_manager → $CYPRESS_MANAGER_ROLE_ID  (CM - manages listings, DD, orgs)"
+echo "    admin           → $ADMIN_ROLE_ID"
 echo ""
 echo "  Org Roles:"
-echo "    org:member → $ORG_MEMBER_ID"
-echo "    org:admin  → $ORG_ADMIN_ID"
-echo "    org:owner  → $ORG_OWNER_ID"
+echo "    org:member        → $ORG_MEMBER_ID"
+echo "    org:admin         → $ORG_ADMIN_ID"
+echo "    org:fleet_manager → $ORG_FLEET_MANAGER_ID"
+echo "    org:owner         → $ORG_OWNER_ID"
 echo ""
-echo "  M2M Applications:"
+echo "  Applications:"
+echo "    cypress-mvp (Traditional Web):"
+echo "      Client ID:     $CYPRESS_APP_ID"
+echo "      Client Secret: $CYPRESS_APP_SECRET"
+echo "      Redirect URI:  $CYPRESS_APP_REDIRECT"
 echo "    cypress-core-m2m:"
 echo "      Client ID:     $CORE_M2M_ID"
 echo "      Client Secret: $CORE_M2M_SECRET"
@@ -620,8 +702,11 @@ echo "      Client Secret: $N8N_M2M_SECRET"
 echo ""
 echo "  Test Org:      $TEST_ORG_NAME ($TEST_ORG_ID)"
 echo ""
-echo -e "  ${CYAN}Add these to your .env:${NC}"
+echo -e "  ${CYAN}Add these to your Cypress Core .env:${NC}"
 echo ""
+echo "    LOGTO_ENDPOINT=$LOGTO_API"
+echo "    LOGTO_APP_ID=$CYPRESS_APP_ID"
+echo "    LOGTO_APP_SECRET=$CYPRESS_APP_SECRET"
 echo "    LOGTO_CORE_M2M_ID=$CORE_M2M_ID"
 echo "    LOGTO_CORE_M2M_SECRET=$CORE_M2M_SECRET"
 echo "    LOGTO_N8N_M2M_ID=$N8N_M2M_ID"
