@@ -26,37 +26,8 @@ err()   { echo -e "${RED}[ERROR]${NC} $*"; }
 # =============================================================================
 if [ "$PHASE" -ge 1 ]; then
   info "Seeding Phase 1 — Logto RBAC..."
-
-  LOGTO_ADMIN="http://localhost:7002"
-  LOGTO_API="http://localhost:7001"
-
-  # Note: Logto's Management API requires an access token from M2M app.
-  # On first setup, create a Machine-to-Machine application in the Logto
-  # Admin Console at http://localhost:7002, then use the credentials here.
-  #
-  # The RBAC model to configure:
-  #
-  # API Resource: https://api.cypress.io
-  #   Permissions:
-  #     - fleet:read       (View fleet data)
-  #     - fleet:write      (Create/update fleet)
-  #     - fleet:appraise   (Run vehicle appraisals)
-  #     - billing:view     (View invoices & billing)
-  #     - billing:manage   (Manage subscriptions)
-  #     - contracts:sign   (Sign legal documents)
-  #     - admin:all        (Full admin access)
-  #
-  # Roles:
-  #   - guest: fleet:read (sandbox — 3 vehicle limit enforced at app level)
-  #   - pro:   fleet:read, fleet:write, fleet:appraise, billing:view, contracts:sign
-  #   - admin: all permissions
-  #
-  # Organizations:
-  #   - Each customer org is a Logto Organization
-  #   - Organization roles mirror the above (guest, pro, admin scoped to org)
-
-  ok "Phase 1 RBAC model documented. Configure via Logto Admin Console at $LOGTO_ADMIN"
-  echo "  → Create M2M app, then API Resource, Permissions, and Roles as above."
+  "$SCRIPT_DIR/seed-logto.sh"
+  ok "Phase 1 Logto RBAC seeded"
 fi
 
 # =============================================================================

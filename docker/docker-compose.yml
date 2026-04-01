@@ -104,11 +104,13 @@ services:
     environment:
       TRUST_PROXY_HEADER: "1"
       DB_URL: postgres://${POSTGRES_USER:-cypress}:${POSTGRES_PASSWORD:-cypress_dev_password}@postgres:5432/logto
+      PORT: "7001"
+      ADMIN_PORT: "7002"
       ENDPOINT: http://localhost:7001
       ADMIN_ENDPOINT: http://localhost:7002
     ports:
-      - "7001:3001"
-      - "7002:3002"
+      - "7001:7001"
+      - "7002:7002"
     volumes:
       - logto-data:/etc/logto
     networks:
