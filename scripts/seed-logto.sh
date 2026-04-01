@@ -461,8 +461,8 @@ N8N_M2M_SECRET="${N8N_M2M_RESULT##*|}"
 info "Setting up cypress-mvp application..."
 
 CYPRESS_APP_NAME="cypress-mvp"
-CYPRESS_APP_REDIRECT="${CYPRESS_APP_REDIRECT_URI:-http://localhost:3000/api/auth/callback/logto}"
-CYPRESS_APP_LOGOUT_REDIRECT="${CYPRESS_APP_LOGOUT_REDIRECT_URI:-http://localhost:3000}"
+CYPRESS_APP_REDIRECT="${CYPRESS_APP_REDIRECT_URI:-http://localhost:6100/api/auth/callback/logto}"
+CYPRESS_APP_LOGOUT_REDIRECT="${CYPRESS_APP_LOGOUT_REDIRECT_URI:-http://localhost:6100}"
 
 EXISTING_APP=$(api GET /api/applications | jq -r ".[] | select(.name==\"$CYPRESS_APP_NAME\") | .id")
 
