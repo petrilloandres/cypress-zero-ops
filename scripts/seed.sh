@@ -28,6 +28,10 @@ if [ "$PHASE" -ge 1 ]; then
   info "Seeding Phase 1 — Logto RBAC..."
   "$SCRIPT_DIR/seed-logto.sh"
   ok "Phase 1 Logto RBAC seeded"
+
+  info "Seeding Phase 1 — Novu Notifications..."
+  "$SCRIPT_DIR/seed-novu.sh"
+  ok "Phase 1 Novu seeded"
 fi
 
 # =============================================================================

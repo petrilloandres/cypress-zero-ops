@@ -513,6 +513,83 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 12. Resend Email Connector (optional — requires LOGTO_RESEND_API_KEY)
+# ---------------------------------------------------------------------------
+RESEND_KEY="${LOGTO_RESEND_API_KEY:-}"
+EMAIL_FROM="${LOGTO_EMAIL_FROM:-onboarding@resend.dev}"
+
+if [[ -n "$RESEND_KEY" ]]; then
+  info "Setting up Resend email connector (via SMTP)..."
+
+  EXISTING_SMTP=$(api GET /api/connectors | jq -r '.[] | select(.connectorId=="simple-mail-transfer-protocol") | .id')
+  if [[ -n "$EXISTING_SMTP" ]]; then
+    ok "Email connector exists ($EXISTING_SMTP)"
+  else
+    SMTP_RESP=$(api POST /api/connectors -d "$(cat <<EOJSON
+{
+  "connectorId": "simple-mail-transfer-protocol",
+  "config": {
+    "host": "smtp.resend.com",
+    "port": 465,
+    "secure": true,
+    "auth": {
+      "user": "resend",
+      "pass": "$RESEND_KEY"
+    },
+    "fromEmail": "$EMAIL_FROM",
+    "templates": [
+      {
+        "usageType": "SignIn",
+        "subject": "Cypress — Sign in verification code",
+        "content": "<div style=\"font-family:sans-serif;max-width:480px;margin:0 auto\"><h2>Sign in to Cypress</h2><p>Your verification code is:</p><p style=\"font-size:32px;font-weight:bold;letter-spacing:4px;color:#6366f1\">{{code}}</p><p style=\"color:#666\">This code expires in 10 minutes.</p></div>",
+        "contentType": "text/html"
+      },
+      {
+        "usageType": "Register",
+        "subject": "Cypress — Registration verification code",
+        "content": "<div style=\"font-family:sans-serif;max-width:480px;margin:0 auto\"><h2>Welcome to Cypress</h2><p>Your verification code is:</p><p style=\"font-size:32px;font-weight:bold;letter-spacing:4px;color:#6366f1\">{{code}}</p><p style=\"color:#666\">This code expires in 10 minutes.</p></div>",
+        "contentType": "text/html"
+      },
+      {
+        "usageType": "ForgotPassword",
+        "subject": "Cypress — Reset your password",
+        "content": "<div style=\"font-family:sans-serif;max-width:480px;margin:0 auto\"><h2>Reset your password</h2><p>Your verification code is:</p><p style=\"font-size:32px;font-weight:bold;letter-spacing:4px;color:#6366f1\">{{code}}</p><p style=\"color:#666\">This code expires in 10 minutes.</p></div>",
+        "contentType": "text/html"
+      },
+      {
+        "usageType": "Generic",
+        "subject": "Cypress — Verification code",
+        "content": "<div style=\"font-family:sans-serif;max-width:480px;margin:0 auto\"><h2>Verification code</h2><p>Your verification code is:</p><p style=\"font-size:32px;font-weight:bold;letter-spacing:4px;color:#6366f1\">{{code}}</p><p style=\"color:#666\">This code expires in 10 minutes.</p></div>",
+        "contentType": "text/html"
+      }
+    ]
+  }
+}
+EOJSON
+    )")
+    SMTP_CONN_ID=$(echo "$SMTP_RESP" | jq -r '.id // empty')
+    if [[ -n "$SMTP_CONN_ID" ]]; then
+      ok "Email connector created ($SMTP_CONN_ID) — from: $EMAIL_FROM"
+    else
+      warn "Failed to create email connector: $(echo "$SMTP_RESP" | jq -r '.message // .code // "unknown error"')"
+    fi
+  fi
+
+  # Enable email sign-in (verification code method)
+  SIGN_IN=$(api GET /api/sign-in-exp | jq '.signIn')
+  HAS_EMAIL=$(echo "$SIGN_IN" | jq '[.methods[] | select(.identifier=="email")] | length')
+  if [[ "$HAS_EMAIL" -gt 0 ]]; then
+    ok "Email sign-in already enabled"
+  else
+    UPDATED_METHODS=$(echo "$SIGN_IN" | jq '.methods + [{"identifier":"email","password":false,"verificationCode":true,"isPasswordPrimary":false}]')
+    api PATCH /api/sign-in-exp -d "{\"signIn\":{\"methods\":$UPDATED_METHODS}}" >/dev/null
+    ok "Email sign-in with verification code enabled"
+  fi
+else
+  info "Skipping email connector (set LOGTO_RESEND_API_KEY in .env)"
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
