@@ -149,6 +149,12 @@ if $RESET; then
     ok "Deleted webhook $hook_id"
   done
 
+  # Delete social connectors
+  for conn_id in $(api GET /api/connectors | jq -r '.[].id'); do
+    api_code DELETE "/api/connectors/$conn_id"
+    ok "Deleted connector $conn_id"
+  done
+
   # Delete all scopes on our API resource, then the resource itself
   RESOURCE_ID=$(api GET /api/resources | jq -r ".[] | select(.indicator==\"$API_RESOURCE_INDICATOR\") | .id")
   if [[ -n "$RESOURCE_ID" ]]; then
@@ -460,6 +466,51 @@ create_webhook() {
 create_webhook "User Created → n8n"            "User.Created"              "/webhook/user-created"
 create_webhook "User Updated → n8n"            "User.Updated"              "/webhook/user-updated"
 create_webhook "Organization Created → n8n"    "PostRegister"              "/webhook/org-created"
+
+# ---------------------------------------------------------------------------
+# 11. Google Social Connector (optional — requires LOGTO_GOOGLE_CLIENT_ID)
+# ---------------------------------------------------------------------------
+GOOGLE_CLIENT_ID="${LOGTO_GOOGLE_CLIENT_ID:-}"
+GOOGLE_CLIENT_SECRET="${LOGTO_GOOGLE_CLIENT_SECRET:-}"
+
+if [[ -n "$GOOGLE_CLIENT_ID" && -n "$GOOGLE_CLIENT_SECRET" ]]; then
+  info "Setting up Google social connector..."
+
+  EXISTING_GOOGLE=$(api GET /api/connectors | jq -r '.[] | select(.connectorId=="google-universal") | .id')
+  if [[ -n "$EXISTING_GOOGLE" ]]; then
+    ok "Google connector exists ($EXISTING_GOOGLE)"
+  else
+    GOOGLE_RESP=$(api POST /api/connectors -d "$(cat <<EOJSON
+{
+  "connectorId": "google-universal",
+  "config": {
+    "clientId": "$GOOGLE_CLIENT_ID",
+    "clientSecret": "$GOOGLE_CLIENT_SECRET",
+    "scope": "openid profile email"
+  }
+}
+EOJSON
+    )")
+    GOOGLE_CONN_ID=$(echo "$GOOGLE_RESP" | jq -r '.id // empty')
+    if [[ -n "$GOOGLE_CONN_ID" ]]; then
+      ok "Google connector created ($GOOGLE_CONN_ID)"
+    else
+      warn "Failed to create Google connector: $(echo "$GOOGLE_RESP" | jq -r '.message // .code // "unknown error"')"
+    fi
+  fi
+
+  # Enable Google in sign-in experience
+  CURRENT_TARGETS=$(api GET /api/sign-in-exp | jq -r '.socialSignInConnectorTargets')
+  if echo "$CURRENT_TARGETS" | jq -e 'index("google")' >/dev/null 2>&1; then
+    ok "Google already in sign-in experience"
+  else
+    UPDATED_TARGETS=$(echo "$CURRENT_TARGETS" | jq '. + ["google"]')
+    api PATCH /api/sign-in-exp -d "{\"socialSignInConnectorTargets\": $UPDATED_TARGETS}" >/dev/null
+    ok "Google added to sign-in experience"
+  fi
+else
+  info "Skipping Google connector (set LOGTO_GOOGLE_CLIENT_ID and LOGTO_GOOGLE_CLIENT_SECRET in .env)"
+fi
 
 # ---------------------------------------------------------------------------
 # Summary
