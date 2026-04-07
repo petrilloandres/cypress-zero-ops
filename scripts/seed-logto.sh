@@ -561,7 +561,8 @@ if [[ -n "$GOOGLE_CLIENT_ID" && -n "$GOOGLE_CLIENT_SECRET" ]]; then
   "config": {
     "clientId": "$GOOGLE_CLIENT_ID",
     "clientSecret": "$GOOGLE_CLIENT_SECRET",
-    "scope": "openid profile email"
+    "scope": "openid profile email",
+    "prompts": ["consent"]
   }
 }
 EOJSON

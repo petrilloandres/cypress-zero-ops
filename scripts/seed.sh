@@ -32,6 +32,14 @@ if [ "$PHASE" -ge 1 ]; then
   info "Seeding Phase 1 — Novu Notifications..."
   "$SCRIPT_DIR/seed-novu.sh"
   ok "Phase 1 Novu seeded"
+
+  info "Seeding Phase 1 — Metabase BI..."
+  "$SCRIPT_DIR/seed-metabase.sh"
+  ok "Phase 1 Metabase seeded"
+
+  info "Seeding Phase 1 — Metabase Dashboards..."
+  "$SCRIPT_DIR/seed-metabase-dashboards.sh"
+  ok "Phase 1 Metabase dashboards seeded"
 fi
 
 # =============================================================================

@@ -8,6 +8,7 @@
 -- Phase 1
 CREATE DATABASE logto;
 CREATE DATABASE n8n;
+CREATE DATABASE metabase;
 
 -- Phase 2
 CREATE DATABASE docuseal;

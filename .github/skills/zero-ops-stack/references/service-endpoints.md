@@ -17,6 +17,7 @@ Zero-Ops runs in Docker Compose. Start with: `cd cypress-zero-ops && ./scripts/s
 | **Novu API** | `http://localhost:7010` | Notification API |
 | **Novu Dashboard** | `http://localhost:7011` | Notification management (browser) |
 | **Novu WS** | `ws://localhost:7012` | Real-time notification WebSocket |
+| **Metabase BI** | `http://localhost:7050` | BI dashboards and analytics modeling |
 | **DocuSeal** | `http://localhost:7020` | Contract signing UI + API |
 | **Lago API** | `http://localhost:7030` | Billing/metering API |
 | **Lago Dashboard** | `http://localhost:7031` | Billing management (browser) |
@@ -40,7 +41,7 @@ When n8n calls services within the Docker network, it uses container names:
 
 ### Core → Zero-Ops (Local)
 
-When Cypress Core runs on `localhost:3000` and calls Zero-Ops:
+When Cypress Core runs on `localhost:6100` and calls Zero-Ops:
 
 ```bash
 # Core .env for local development
@@ -52,7 +53,7 @@ When n8n calls Cypress Core from inside Docker:
 
 ```bash
 # n8n uses Docker's host gateway
-CYPRESS_CORE_API_URL=http://host.docker.internal:3000
+CYPRESS_CORE_API_URL=http://host.docker.internal:6100
 ```
 
 ## Production (Railway)

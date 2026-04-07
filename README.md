@@ -28,7 +28,7 @@ git clone <repo-url> cypress-zero-ops && cd cypress-zero-ops
 # 2. Copy env file
 cp .env.example .env
 
-# 3. Start Phase 1 (Auth + Notifications)
+# 3. Start Phase 1 (Auth + Notifications + BI)
 ./scripts/setup.sh 1
 ```
 
@@ -40,6 +40,7 @@ cp .env.example .env
 | Logto API | http://localhost:7001 |
 | n8n (Workflows) | http://localhost:7678 |
 | Novu Dashboard | http://localhost:7011 |
+| Metabase BI | http://localhost:7050 |
 | PostgreSQL | localhost:7432 |
 | Redis | localhost:7379 |
 
@@ -47,7 +48,7 @@ cp .env.example .env
 
 | Phase | Services | Purpose |
 |-------|----------|---------|
-| **1** | Logto, n8n, Novu | Auth, RBAC, notifications |
+| **1** | Logto, n8n, Novu, Metabase | Auth, RBAC, notifications, BI |
 | **2** | DocuSeal, Lago | Contracts, billing, metering |
 | **3** | Twenty CRM | Customer pipeline, fleet tracking |
 | **4** | Stripe, QuickBooks | Payments, accounting |
@@ -91,6 +92,8 @@ cp .env.example .env
 ├── scripts/
 │   ├── setup.sh               # One-command bootstrap
 │   ├── seed.sh                # Seed dev data
+│   ├── seed-metabase.sh       # Configure Metabase + Core DB source
+│   ├── seed-metabase-dashboards.sh # Create Core KPI cards + dashboard
 │   ├── export-n8n.sh          # Export n8n workflows → JSON
 │   └── import-n8n.sh          # Import n8n workflows ← JSON
 ├── docs/                      # Architecture + deployment docs
@@ -112,6 +115,7 @@ All ports are in the **7000 range** to avoid collisions.
 | Novu API | 7010 |
 | Novu Dashboard | 7011 |
 | Novu WS | 7012 |
+| Metabase BI | 7050 |
 | DocuSeal | 7020 |
 | Lago API | 7030 |
 | Lago Dashboard | 7031 |

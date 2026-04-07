@@ -106,6 +106,7 @@ echo -e "${CYAN}║${NC}  n8n               ${GREEN}http://localhost:7678${NC}  
 echo -e "${CYAN}║${NC}  Novu API          ${GREEN}http://localhost:7010${NC}                    ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  Novu Dashboard    ${GREEN}http://localhost:7011${NC}                    ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  Novu WebSocket    ${GREEN}ws://localhost:7012${NC}                      ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  Metabase BI       ${GREEN}http://localhost:7050${NC}                    ${CYAN}║${NC}"
 if [ "$PHASE" -ge 2 ]; then
 echo -e "${CYAN}║${NC}  DocuSeal          ${GREEN}http://localhost:7020${NC}                    ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  Lago API          ${GREEN}http://localhost:7030${NC}                    ${CYAN}║${NC}"
